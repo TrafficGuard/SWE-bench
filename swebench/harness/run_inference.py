@@ -1,4 +1,4 @@
-from swebench.harness.docker_build import build_container, setup_logger, close_logger, build_base_images, build_env_images
+from swebench.harness.docker_build import build_container, setup_logger, close_logger, build_base_images, build_env_images, get_test_specs_from_dataset
 from swebench.harness.test_spec import make_test_spec
 from swebench.harness.utils import load_swebench_dataset, str2bool
 from typing import Tuple, List
@@ -99,7 +99,7 @@ def main(
         dataset = full_dataset
 
     # Create TestSpec objects for the filtered dataset
-    test_specs = [make_test_spec(instance) for instance in dataset]
+    test_specs = get_test_specs_from_dataset(dataset)
     
     # Build base images only for the filtered dataset
     build_base_images(client, test_specs, force_rebuild)
