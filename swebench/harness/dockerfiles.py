@@ -5,7 +5,13 @@ FROM --platform={platform} ubuntu:22.04
 ARG DEBIAN_FRONTEND=noninteractive
 ENV TZ=Etc/UTC
 
+# NOUS ===========
+RUN curl -sL https://deb.nodesource.com/setup_20.x -o nodesource_setup.sh
+RUN chmod +x ./nodesource_setup.sh && ./nodesource_setup.sh
+# ================
+
 RUN apt update && apt install -y \
+nodejs \
 wget \
 git \
 build-essential \
@@ -38,6 +44,12 @@ _DOCKERFILE_ENV = r"""FROM --platform={platform} sweb.base.{arch}:latest
 COPY ./setup_env.sh /root/
 RUN chmod +x /root/setup_env.sh
 RUN /bin/bash -c "source ~/.bashrc && /root/setup_env.sh"
+
+# NOUS ===========
+WORKDIR /nous/
+RUN git clone --depth=1 https://github.com/TrafficGuard/nous.git .
+RUN npm install
+# ================
 
 WORKDIR /testbed/
 
