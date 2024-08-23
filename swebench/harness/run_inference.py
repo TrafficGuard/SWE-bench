@@ -33,8 +33,12 @@ def setup_container_for_inference(instance_id: str, test_spec: object, run_id: s
     logger = setup_logger(instance_id, log_dir / "setup_container.log")
 
     try:
+        # Build base and environment images
+        build_base_images(client, [test_spec])
+        build_env_images(client, [test_spec])
+
         # Build and start the container
-        container = build_container(test_spec, client, run_id, logger, nocache=True, force_rebuild=False)
+        container = build_container(test_spec, client, run_id, logger, nocache=True, force_rebuild=True)
         container.start()
         logger.info(f"Container for {instance_id} started: {container.id}")
         # At this point, the container is running with the appropriate environment set up
