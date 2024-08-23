@@ -63,6 +63,11 @@ def run_inference(instance_id: str, dataset_name: str, split: str, run_id: str):
     # Get test_spec
     test_spec = get_test_spec(instance_id, dataset_name, split)
     
+    # Build base and environment images
+    client = docker.from_env()
+    build_base_images(client, [test_spec])
+    build_env_images(client, [test_spec])
+    
     container = setup_container_for_inference(instance_id, test_spec, run_id)
     try:
         # Run inference
