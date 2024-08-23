@@ -1,18 +1,15 @@
-from swebench.harness.docker_build import build_container, setup_logger, close_logger
+from swebench.harness.docker_build import build_container, setup_logger, close_logger, build_base_images, build_env_images
 from swebench.harness.test_spec import make_test_spec
 from swebench.harness.utils import load_swebench_dataset, str2bool
-from typing import Tuple
+from typing import Tuple, List
 from swebench.harness.docker_utils import (cleanup_container, copy_to_container, exec_run_with_timeout)
 import docker
 from pathlib import Path
 import logging
 from argparse import ArgumentParser
-import docker
 from concurrent.futures import ThreadPoolExecutor, as_completed
 import json
 from tqdm import tqdm
-from swebench.harness.docker_build import build_base_images, build_env_images
-from swebench.harness.utils import load_swebench_dataset
 
 RUN_INFERENCE_LOG_DIR = Path("logs/run_inference")
 
@@ -81,7 +78,7 @@ def run_inference(instance_id: str, dataset_name: str, split: str, run_id: str):
 def main(
         dataset_name: str,
         split: str,
-        instance_ids: list,
+        instance_ids: List[str],
         max_workers: int,
         force_rebuild: bool,
         cache_level: str,
@@ -93,17 +90,26 @@ def main(
     client = docker.from_env()
     
     # Load dataset
-    dataset = load_swebench_dataset(dataset_name, split)
-    if instance_ids:
-        dataset = [i for i in dataset if i['instance_id'] in instance_ids]
+    full_dataset = load_swebench_dataset(dataset_name, split)
     
-    # Build base and environment images
-    build_base_images(client, dataset, force_rebuild)
-    build_env_images(client, dataset, force_rebuild, max_workers)
+    # Filter dataset based on instance_ids if provided
+    if instance_ids:
+        dataset = [i for i in full_dataset if i['instance_id'] in instance_ids]
+    else:
+        dataset = full_dataset
+
+    # Create TestSpec objects for the filtered dataset
+    test_specs = [make_test_spec(instance) for instance in dataset]
+    
+    # Build base images only for the filtered dataset
+    build_base_images(client, test_specs, force_rebuild)
+    
+    # Build environment images only for the filtered dataset
+    build_env_images(client, test_specs, force_rebuild, max_workers)
     
     # Set up the thread pool
     with ThreadPoolExecutor(max_workers=max_workers) as executor:
-        # Create a future for each instance ID
+        # Create a future for each instance
         futures = {executor.submit(run_inference, instance['instance_id'], dataset_name, split, run_id): instance['instance_id'] for instance in dataset}
         
         # Process the results as they complete
