@@ -7,9 +7,12 @@ import docker
 from pathlib import Path
 import logging
 from argparse import ArgumentParser
+import docker
 from concurrent.futures import ThreadPoolExecutor, as_completed
 import json
 from tqdm import tqdm
+from swebench.harness.docker_build import build_base_images, build_env_images
+from swebench.harness.utils import load_swebench_dataset
 
 RUN_INFERENCE_LOG_DIR = Path("logs/run_inference")
 
@@ -87,20 +90,32 @@ def main(
         run_id: str,
         timeout: int,
     ):
+    client = docker.from_env()
+    
+    # Load dataset
+    dataset = load_swebench_dataset(dataset_name, split)
+    if instance_ids:
+        dataset = [i for i in dataset if i['instance_id'] in instance_ids]
+    
+    # Build base and environment images
+    build_base_images(client, dataset, force_rebuild)
+    build_env_images(client, dataset, force_rebuild, max_workers)
+    
     # Set up the thread pool
     with ThreadPoolExecutor(max_workers=max_workers) as executor:
         # Create a future for each instance ID
-        futures = {executor.submit(run_inference, instance_id, dataset_name, split, run_id): instance_id for instance_id in instance_ids}
+        futures = {executor.submit(run_inference, instance['instance_id'], dataset_name, split, run_id): instance['instance_id'] for instance in dataset}
         
         # Process the results as they complete
         results = []
-        with tqdm(total=len(instance_ids), desc="Running inference") as pbar:
+        with tqdm(total=len(dataset), desc="Running inference") as pbar:
             for future in as_completed(futures):
                 instance_id, git_diff = future.result()
                 results.append({"instance_id": instance_id, "model_patch": git_diff})
                 pbar.update(1)
         
         # Write the results to the predictions file
+        predictions_path = f"{run_id}_predictions.jsonl"
         with open(predictions_path, 'w') as f:
             for result in results:
                 json.dump(result, f)
