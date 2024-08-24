@@ -10,6 +10,7 @@ from argparse import ArgumentParser
 from concurrent.futures import ThreadPoolExecutor, as_completed
 import json
 from tqdm import tqdm
+import traceback
 
 RUN_INFERENCE_LOG_DIR = Path("logs/run_inference")
 
