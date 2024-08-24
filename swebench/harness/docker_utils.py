@@ -23,6 +23,9 @@ def copy_to_container(container: Container, src: Path, dst: Path):
         src (Path): Source file path
         dst (Path): Destination file path in the container
     """
+    # Expand user home directory symbol (~) if it exists in the src path
+    src = src.expanduser()
+
     # Check if destination path is valid
     if os.path.dirname(dst) == "":
         raise ValueError(
