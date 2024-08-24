@@ -173,10 +173,8 @@ def main(
                         for result in results:
                             f.write(f"{json.dumps(prediction)}\n")
                 except Exception as e:
-                    print(f"Error running {instance_id}")
                     traceback.print_exc()
                     continue
-        
 
 
 if __name__ == "__main__":
