@@ -15,6 +15,20 @@ RUN_INFERENCE_LOG_DIR = Path("logs/run_inference")
 
 # Inference is generating a solution for the TestSpec
 
+class InferenceError(Exception):
+    def __init__(self, instance_id, message, logger):
+        super().__init__(message)
+        self.super_str = super().__str__()
+        self.instance_id = instance_id
+        self.log_file = logger.log_file
+        self.logger = logger
+
+    def __str__(self):
+        return (
+            f"Inference error for {self.instance_id}: {self.super_str}\n"
+            f"Check ({self.log_file}) for more information."
+        )
+
 def get_test_spec(instance_id: str, dataset_name: str, split: str) -> object:
     dataset = load_swebench_dataset(dataset_name, split)
     instance = next((i for i in dataset if i['instance_id'] == instance_id), None)
@@ -46,8 +60,9 @@ def setup_container_for_inference(instance_id: str, test_spec: object, run_id: s
         # Configure Nous
         copy_to_container(container, Path("~/local.env"), Path("/nous/variables/local.env"))
         # Get the latest version
-        container.exec_run("git pull", workdir="/nous").output.decode("utf-8").strip()
-
+        pull_output = container.exec_run("git pull", workdir="/nous").output.decode("utf-8").strip()
+        logger.info("Pulled latest nous")
+        logger.info(pull_output)
         return container
     except Exception as e:
         logger.error(f"Error setting up container for {instance_id}: {e}")
@@ -71,21 +86,41 @@ def run_inference(instance_id: str, dataset_name: str, split: str, run_id: str):
     client = docker.from_env()
     build_base_images(client, [test_spec])
     build_env_images(client, [test_spec])
-    
+
+    # Set up logging
+    log_dir = RUN_INFERENCE_LOG_DIR / run_id / instance_id
+    log_dir.mkdir(parents=True, exist_ok=True)
+    logger = setup_logger(instance_id, log_dir / "inference.log")
+
     container = setup_container_for_inference(instance_id, test_spec, run_id)
+
     try:
         # Run inference
-        output = container.exec_run(f"npm run swebench --fs=/testbed {instance_id}", workdir="/nous").output.decode("utf-8").strip()
-        
+        print(f"Running inference for {instance_id}")
+        timeout = 60 * 60 # 1hr
+        #inference_output = container.exec_run(f"npm run swebench --fs=/testbed {instance_id}", workdir="/nous").output.decode("utf-8").strip()
+        # Run eval script, write output to logs
+        inference_output, timed_out, total_runtime = exec_run_with_timeout(container, f"npm run swebench --fs=/testbed {instance_id}", timeout, workdir="/nous")
+        inference_output_path = log_dir / "inference_output.txt"
+        print(f'Inference {instance_id} runtime: {total_runtime:_.2f} seconds')
+        logger.info(f'Inference {instance_id} runtime: {total_runtime:_.2f} seconds')
+        logger.info(inference_output)
+
+        if timed_out:
+            f.write(f"\n\nTimeout error: {timeout} seconds exceeded.")
+            raise InferenceError(
+                instance_id,
+                f"Inference for {instance_id} timed out after {timeout} seconds.",
+                logger,
+            )
         # Get git diff
         git_diff = container.exec_run(f"git diff HEAD {test_spec.base_commit}", workdir="/testbed").output.decode("utf-8").strip()
-        
+        logger.info(git_diff)
+
         return instance_id, git_diff
     finally:
-        # Clean up the container
-        cleanup_logger = setup_logger(f"cleanup_{instance_id}", RUN_INFERENCE_LOG_DIR / run_id / instance_id / "cleanup.log")
         cleanup_container(client, container, cleanup_logger)
-        close_logger(cleanup_logger)
+        close_logger(logger)
 
 def main(
         dataset_name: str,
@@ -128,16 +163,21 @@ def main(
         results = []
         with tqdm(total=len(dataset), desc="Running inference") as pbar:
             for future in as_completed(futures):
-                instance_id, git_diff = future.result()
-                results.append({"instance_id": instance_id, "model_patch": git_diff})
-                pbar.update(1)
+                pbar.update(1) # Update progress bar
+                try:
+                    instance_id, git_diff = future.result()
+                    prediction = {"instance_id": instance_id, "model_patch": git_diff}
+                    # Write the results to the predictions file as we get them
+                    predictions_path = f"{run_id}_predictions.jsonl"
+                    with open(predictions_path, 'a') as f:
+                        for result in results:
+                            f.write(f"{json.dumps(prediction)}\n")
+                except Exception as e:
+                    print(f"Error running {instance_id}")
+                    traceback.print_exc()
+                    continue
         
-        # Write the results to the predictions file
-        predictions_path = f"{run_id}_predictions.jsonl"
-        with open(predictions_path, 'w') as f:
-            for result in results:
-                json.dump(result, f)
-                f.write('\n')
+
 
 if __name__ == "__main__":
     parser = ArgumentParser()

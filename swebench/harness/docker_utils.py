@@ -173,7 +173,7 @@ def cleanup_container(client, container, logger):
         )
 
 
-def exec_run_with_timeout(container, cmd, timeout: int|None=60):
+def exec_run_with_timeout(container, cmd, timeout: int|None=60, workdir: string="./"):
     """
     Run a command in a container with a timeout.
 
@@ -192,7 +192,7 @@ def exec_run_with_timeout(container, cmd, timeout: int|None=60):
     def run_command():
         nonlocal exec_result, exec_id, exception
         try:
-            exec_id = container.client.api.exec_create(container.id, cmd)["Id"]
+            exec_id = container.client.api.exec_create(container.id, cmd, workdir=workdir)["Id"]
             exec_stream = container.client.api.exec_start(exec_id, stream=True)
             for chunk in exec_stream:
                 exec_result += chunk.decode()
