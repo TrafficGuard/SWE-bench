@@ -36,6 +36,7 @@ class TestSpec:
     """
     instance_id: str
     repo: str
+    base_commit: str
     version: str
     repo_script_list: list[str]
     eval_script_list: list[str]
@@ -293,6 +294,7 @@ def make_test_spec(instance: SWEbenchInstance) -> TestSpec:
     return TestSpec(
         instance_id=instance_id,
         repo=repo,
+        base_commit=base_commit,
         env_script_list=env_script_list,
         repo_script_list=repo_script_list,
         eval_script_list=eval_script_list,
