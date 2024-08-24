@@ -82,7 +82,10 @@ def run_inference(instance_id: str, dataset_name: str, split: str, run_id: str):
         
         return instance_id, git_diff
     finally:
-        cleanup_container(docker.from_env(), container, setup_logger("cleanup", "/path/to/cleanup.log"))
+        # Clean up the container
+        cleanup_logger = setup_logger(f"cleanup_{instance_id}", RUN_INFERENCE_LOG_DIR / run_id / instance_id / "cleanup.log")
+        cleanup_container(client, container, cleanup_logger)
+        close_logger(cleanup_logger)
 
 def main(
         dataset_name: str,
