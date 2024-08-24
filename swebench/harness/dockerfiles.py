@@ -5,13 +5,7 @@ FROM --platform={platform} ubuntu:22.04
 ARG DEBIAN_FRONTEND=noninteractive
 ENV TZ=Etc/UTC
 
-# NOUS ===========
-RUN curl -sL https://deb.nodesource.com/setup_20.x -o nodesource_setup.sh
-RUN chmod +x ./nodesource_setup.sh && ./nodesource_setup.sh
-# ================
-
 RUN apt update && apt install -y \
-nodejs \
 wget \
 git \
 build-essential \
@@ -37,6 +31,12 @@ RUN conda init --all
 RUN conda config --append channels conda-forge
 
 RUN adduser --disabled-password --gecos 'dog' nonroot
+
+# NOUS ===========
+RUN curl -sL https://deb.nodesource.com/setup_20.x -o nodesource_setup.sh
+RUN chmod +x ./nodesource_setup.sh && ./nodesource_setup.sh
+RUN apt update && apt install -y nodejs  \
+&& rm -rf /var/lib/apt/lists/*
 """
 
 _DOCKERFILE_ENV = r"""FROM --platform={platform} sweb.base.{arch}:latest
