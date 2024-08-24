@@ -120,7 +120,7 @@ def run_inference(instance_id: str, dataset_name: str, split: str, run_id: str):
 
         return instance_id, git_diff
     finally:
-        cleanup_container(client, container, cleanup_logger)
+        cleanup_container(client, container, logger)
         close_logger(logger)
 
 def main(
