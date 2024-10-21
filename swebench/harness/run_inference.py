@@ -1,3 +1,4 @@
+from swebench.constants import SWEbenchInstance
 from swebench.harness.docker_build import build_container, setup_logger, close_logger, build_base_images, build_env_images, get_test_specs_from_dataset
 from swebench.harness.test_spec import make_test_spec
 from swebench.harness.utils import load_swebench_dataset, str2bool
@@ -37,7 +38,8 @@ def get_test_spec(instance_id: str, dataset_name: str, split: str) -> object:
         raise ValueError(f"Instance {instance_id} not found in dataset")
     return make_test_spec(instance)
 
-def setup_container_for_inference(instance_id: str, test_spec: object, run_id: str):
+def setup_container_for_inference(instance: SWEbenchInstance, test_spec: object, run_id: str):
+    instance_id = instance.instance_id
     # Set up Docker client
     client = docker.from_env()
 
@@ -64,6 +66,12 @@ def setup_container_for_inference(instance_id: str, test_spec: object, run_id: s
         pull_output = container.exec_run("git pull", workdir="/nous").output.decode("utf-8").strip()
         logger.info("Pulled latest nous")
         logger.info(pull_output)
+
+        # Copy the instance to the container
+        with open(f"instance-{instance_id}.json", 'w') as file:
+            json.dump(instance, file, indent=4)
+        copy_to_container(container, Path(f"instance-{instance_id}.json"), Path("/nous/instance.json"))
+
         return container
     except Exception as e:
         logger.error(f"Error setting up container for {instance_id}: {e}")
@@ -79,7 +87,7 @@ def setup_container_for_inference(instance_id: str, test_spec: object, run_id: s
 
 
 
-def run_inference(instance_id: str, dataset_name: str, split: str, run_id: str):
+def run_inference(instance: SWEbenchInstance, dataset_name: str, split: str, run_id: str):
     # Get test_spec
     test_spec = get_test_spec(instance_id, dataset_name, split)
     
@@ -93,7 +101,7 @@ def run_inference(instance_id: str, dataset_name: str, split: str, run_id: str):
     log_dir.mkdir(parents=True, exist_ok=True)
     logger = setup_logger(instance_id, log_dir / "inference.log")
 
-    container = setup_container_for_inference(instance_id, test_spec, run_id)
+    container = setup_container_for_inference(instance, test_spec, run_id)
 
     try:
         # Run inference
@@ -101,7 +109,12 @@ def run_inference(instance_id: str, dataset_name: str, split: str, run_id: str):
         timeout = 60 * 60 # 1hr
         #inference_output = container.exec_run(f"npm run swebench --fs=/testbed {instance_id}", workdir="/nous").output.decode("utf-8").strip()
         # Run eval script, write output to logs
-        inference_output, timed_out, total_runtime = exec_run_with_timeout(container, f"npm run swebench --fs=/testbed {instance_id}", timeout, workdir="/nous")
+        inference_output, timed_out, total_runtime = exec_run_with_timeout(
+            container,
+            f"npm run swebench --fs=/testbed {instance_id}",
+            timeout,
+            workdir="/nous"
+        )
         inference_output_path = log_dir / "inference_output.txt"
         print(f'Inference {instance_id} runtime: {total_runtime:_.2f} seconds')
         logger.info(f'Inference {instance_id} runtime: {total_runtime:_.2f} seconds')
@@ -158,7 +171,7 @@ def main(
     # Set up the thread pool
     with ThreadPoolExecutor(max_workers=max_workers) as executor:
         # Create a future for each instance
-        futures = {executor.submit(run_inference, instance['instance_id'], dataset_name, split, run_id): instance['instance_id'] for instance in dataset}
+        futures = {executor.submit(run_inference, instance, dataset_name, split, run_id): instance['instance_id'] for instance in dataset}
         
         # Process the results as they complete
         results = []

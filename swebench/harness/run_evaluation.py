@@ -114,38 +114,45 @@ def run_instance(
         )
         copy_to_container(container, patch_file, Path("/tmp/patch.diff"))
 
-        # Attempt to apply patch to container
-        val = container.exec_run(
-            "git apply --allow-empty -v /tmp/patch.diff",
-            workdir="/testbed",
-            user="root",
-        )
-        if val.exit_code != 0:
-            logger.info(f"Failed to apply patch to container, trying again...")
-            
-            # try "patch --batch --fuzz=5 -p1 -i {patch_path}" to try again
-            val = container.exec_run(
-                "patch --batch --fuzz=5 -p1 -i /tmp/patch.diff",
-                workdir="/testbed",
-                user="root",
-            )
-            if val.exit_code != 0:
-                logger.info(f"{APPLY_PATCH_FAIL}:\n{val.output.decode('utf-8')}")
-                raise EvaluationError(
-                    instance_id,
-                    f"{APPLY_PATCH_FAIL}:\n{val.output.decode('utf-8')}",
-                    logger,
-                )
-            else:
-                logger.info(f"{APPLY_PATCH_PASS}:\n{val.output.decode('utf-8')}")
-        else:
-            logger.info(f"{APPLY_PATCH_PASS}:\n{val.output.decode('utf-8')}")
+#         # Attempt to apply patch to container
+#         val = container.exec_run(
+#             "git apply --allow-empty -v /tmp/patch.diff",
+#             workdir="/testbed",
+#             user="root",
+#         )
+#         if val.exit_code != 0:
+#             logger.info(f"Failed to apply patch to container, trying again...")
+#
+#             # try "patch --batch --fuzz=5 -p1 -i {patch_path}" to try again
+#             val = container.exec_run(
+#                 "patch --batch --fuzz=5 -p1 -i /tmp/patch.diff",
+#                 workdir="/testbed",
+#                 user="root",
+#             )
+#             if val.exit_code != 0:
+#                 logger.info(f"{APPLY_PATCH_FAIL}:\n{val.output.decode('utf-8')}")
+#                 raise EvaluationError(
+#                     instance_id,
+#                     f"{APPLY_PATCH_FAIL}:\n{val.output.decode('utf-8')}",
+#                     logger,
+#                 )
+#             else:
+#                 logger.info(f"{APPLY_PATCH_PASS}:\n{val.output.decode('utf-8')}")
+#         else:
+#             logger.info(f"{APPLY_PATCH_PASS}:\n{val.output.decode('utf-8')}")
+
+        # Run nous npm run swebench
+        copy_to_container(container, Path("~/gh/nous/variables/local.env"), Path("/nous/variables/local.env"))
+        output = container.exec_run("npm run swebench --fs=/testbed", workdir="/nous").output.decode("utf-8").strip()
+
 
         # Get git diff before running eval script
         git_diff_output_before = (
             container.exec_run("git diff", workdir="/testbed").output.decode("utf-8").strip()
         )
         logger.info(f"Git diff before:\n{git_diff_output_before}")
+
+        pred = { model_patch: git_diff_output_before }
 
         eval_file = Path(log_dir / "eval.sh")
         eval_file.write_text(test_spec.eval_script)
