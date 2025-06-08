@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import docker
+import docker.errors
 import os
 import signal
 import tarfile
@@ -35,7 +36,9 @@ def copy_to_container(container: Container, src: Path, dst: Path):
     # temporary tar file
     tar_path = src.with_suffix(".tar")
     with tarfile.open(tar_path, "w") as tar:
-        tar.add(src, arcname=src.name)
+        tar.add(
+            src, arcname=dst.name
+        )  # use destination name, so after `put_archive`, name is correct
 
     # get bytes for put_archive cmd
     with open(tar_path, "rb") as tar_file:
@@ -46,11 +49,9 @@ def copy_to_container(container: Container, src: Path, dst: Path):
 
     # Send tar file to container and extract
     container.put_archive(os.path.dirname(dst), data)
-    container.exec_run(f"tar -xf {dst}.tar -C {dst.parent}")
 
     # clean up in locally and in container
     tar_path.unlink()
-    container.exec_run(f"rm {dst}.tar")
 
 
 def write_to_container(container: Container, data: str, dst: Path):
@@ -96,9 +97,7 @@ def remove_image(client, image_id, logger=None):
     except Exception as e:
         if raise_error:
             raise e
-        log_error(
-            f"Failed to remove image {image_id}: {e}\n" f"{traceback.format_exc()}"
-        )
+        log_error(f"Failed to remove image {image_id}: {e}\n{traceback.format_exc()}")
 
 
 def cleanup_container(client, container, logger):
@@ -176,7 +175,7 @@ def cleanup_container(client, container, logger):
         )
 
 
-def exec_run_with_timeout(container, cmd, timeout: int|None=60, workdir: string="./"):
+def exec_run_with_timeout(container, cmd, timeout: int | None = 60, workdir: string="./"):
     """
     Run a command in a container with a timeout.
 
@@ -186,7 +185,7 @@ def exec_run_with_timeout(container, cmd, timeout: int|None=60, workdir: string=
         timeout (int): Timeout in seconds.
     """
     # Local variables to store the result of executing the command
-    exec_result = ''
+    exec_result = b""
     exec_id = None
     exception = None
     timed_out = False
@@ -198,7 +197,7 @@ def exec_run_with_timeout(container, cmd, timeout: int|None=60, workdir: string=
             exec_id = container.client.api.exec_create(container.id, cmd, workdir=workdir)["Id"]
             exec_stream = container.client.api.exec_start(exec_id, stream=True)
             for chunk in exec_stream:
-                exec_result += chunk.decode()
+                exec_result += chunk
         except Exception as e:
             exception = e
 
@@ -218,7 +217,7 @@ def exec_run_with_timeout(container, cmd, timeout: int|None=60, workdir: string=
             container.exec_run(f"kill -TERM {exec_pid}", detach=True)
         timed_out = True
     end_time = time.time()
-    return exec_result, timed_out, end_time - start_time
+    return exec_result.decode(), timed_out, end_time - start_time
 
 
 def find_dependent_images(client: docker.DockerClient, image_name: str):
@@ -250,7 +249,7 @@ def find_dependent_images(client: docker.DockerClient, image_name: str):
         # Check if the base image is in this image's history
         history = image.history()
         for layer in history:
-            if layer['Id'] == base_image_id:
+            if layer["Id"] == base_image_id:
                 # If found, add this image to the dependent images list
                 tags = image.tags
                 dependent_images.append(tags[0] if tags else image.id)
@@ -268,11 +267,8 @@ def list_images(client: docker.DockerClient):
 
 
 def clean_images(
-        client: docker.DockerClient,
-        prior_images: set,
-        cache_level: str,
-        clean: bool
-    ):
+    client: docker.DockerClient, prior_images: set, cache_level: str, clean: bool
+):
     """
     Clean Docker images based on cache level and clean flag.
 
@@ -287,7 +283,7 @@ def clean_images(
     """
     images = list_images(client)
     removed = 0
-    print(f"Cleaning cached images...")
+    print("Cleaning cached images...")
     for image_name in images:
         if should_remove(image_name, cache_level, clean, prior_images):
             try:
@@ -299,16 +295,13 @@ def clean_images(
     print(f"Removed {removed} images.")
 
 
-def should_remove(
-        image_name: str,
-        cache_level: str,
-        clean: bool,
-        prior_images: set
-    ):
+def should_remove(image_name: str, cache_level: str, clean: bool, prior_images: set):
     """
     Determine if an image should be removed based on cache level and clean flag.
     """
     existed_before = image_name in prior_images
+    if "/" in image_name:
+        image_name = image_name.split("/", 1)[-1]
     if image_name.startswith("sweb.base"):
         if cache_level in {"none"} and (clean or not existed_before):
             return True
